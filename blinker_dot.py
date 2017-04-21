@@ -37,8 +37,8 @@ class DeltaTimer:
 
     def deltarget(self, **kwargs):
         positive_only = kwargs.get("positive_only", False)
+        positive_only = kwargs.get("p", positive_only)
         time_to_targ = self.target - self.delta()
-
         return time_to_targ if not positive_only else time_to_targ if time_to_targ > 0 else 0
 
 
@@ -101,13 +101,14 @@ def aa_set_pix(ahat, pix):
             ahat.set_pixel(*pixel)
 
 
-hat = SenseHat()
+if __name__ == "__main__":
+    hat = SenseHat()
 
-while True:
-    hat.clear()
-    steps = 1000
-    for i in range(0, steps):
-        funity = i / steps
-        apix = (usin(funity) * 7, ucos(funity) * 7)
-        aa_set_pix(hat, apix)
-        sleep(0.0025)
+    while True:
+        hat.clear()
+        steps = 1000
+        for i in range(0, steps):
+            funity = i / steps
+            apix = (usin(funity) * 7, ucos(funity) * 7)
+            aa_set_pix(hat, apix)
+            sleep(0.0025)
