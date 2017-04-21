@@ -44,14 +44,14 @@ class DeltaTimer:
     def target_sleep(self):
         sleep(self.deltarget(p=1))
 
+
 class Bowl:
-    def __init__(self, x_1, y_1, x_2, y_2, gravity = 9.80665):
+    def __init__(self, x_1, y_1, x_2, y_2, gravity=9.80665):
         self.x_1 = x_1
         self.y_1 = y_1
         self.x_2 = x_2
         self.y_2 = y_2
         self.gravity = gravity
-
 
 
 def get_accelerometer_mpss(ahat):
@@ -74,8 +74,8 @@ def ucos(partial_unit):
 
 
 def split_br(pix):
-    pix_x = int(floor(pix[0]))
-    pix_y = int(floor(pix[1]))
+    pix_x = int(pix[0])
+    pix_y = int(pix[1])
     rem_x = pix[0] - pix_x
     rem_y = pix[1] - pix_y
 
@@ -89,8 +89,8 @@ def split_br(pix):
         return sqrt(inp)
 
     def make_white_tup(factor: float) -> tuple:
-        ret_part = floor(255 * facfun(factor))
-        ret = (ret_part, ret_part, ret_part)
+        ret_part = 255 * facfun(factor)
+        ret = (int(ret_part), int(ret_part), int(ret_part))
         return ret
 
     return_tup = (
@@ -112,11 +112,11 @@ def aa_set_pix(ahat, pix):
 
 if __name__ == "__main__":
     hat = SenseHat()
-    sleeper = DeltaTimer(target_time=0.0025)
+    sleeper = DeltaTimer(target_time=0.001)
 
     while True:
         hat.clear()
-        steps = 1000
+        steps = 1500
         for i in range(0, steps):
             funity = i / steps
             apix = (usin(funity) * 7, ucos(funity) * 7)
