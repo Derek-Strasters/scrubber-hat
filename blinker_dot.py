@@ -45,14 +45,29 @@ class DeltaTimer:
         sleep(self.deltarget(p=1))
 
 
+def hemisphere_force(s_to_cen):
+    return s_to_cen
+
 class Bowl:
-    def __init__(self, x_1, y_1, x_2, y_2, gravity=9.80665):
-        self.x_1 = x_1
-        self.y_1 = y_1
-        self.x_2 = x_2
-        self.y_2 = y_2
+    def __init__(self, x1, y1, x2, y2, gravity=9.80665, force_map = hemisphere_force):
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
         self.gravity = gravity
 
+        self.x_r = (x2 - x1) / 2
+        self.y_r = (y2 - y1) / 2
+        self.cen = (self.x_r + x1, self.y_r + y1)
+
+        self.forcer = force_map
+
+    def get_force(self, point):
+        d_cen = tuple(point[dim] - self.cen[dim] for dim in range(2))
+
+        xforce = g * sin + F * cos - TODO
+
+        return tuple()
 
 def get_accelerometer_mpss(ahat):
     """Test"""
@@ -73,50 +88,59 @@ def ucos(partial_unit):
     return 0.5 + cos(2 * pi * partial_unit) / 2
 
 
+def to_byte(percent):
+    return int(255 * percent)
+
+
 def split_br(pix):
-    pix_x = int(pix[0])
-    pix_y = int(pix[1])
-    rem_x = pix[0] - pix_x
-    rem_y = pix[1] - pix_y
+    p_x0 = int(pix[0])
+    p_y0 = int(pix[1])
+    p_x1 = p_x0 + 1
+    p_y1 = p_y0 + 1
 
-    near_pix = ((pix_x, pix_y), (pix_x + 1, pix_y),
-                (pix_x, pix_y + 1), (pix_x + 1, pix_y + 1))
+    r_x1 = pix[0] - p_x0
+    r_y1 = pix[1] - p_y0
+    r_x0 = 1 - r_x1
+    r_y0 = 1 - r_y1
 
-    factors = ((1 - rem_x) * (1 - rem_y), rem_x * (1 - rem_y),
-               (1 - rem_x) * rem_y, rem_x * rem_y)
-
-    def facfun(inp):
+    def f(inp):
         return sqrt(inp)
 
-    def make_white_tup(factor: float) -> tuple:
-        ret_part = 255 * facfun(factor)
-        ret = (int(ret_part), int(ret_part), int(ret_part))
-        return ret
+    pix_kernel = [(p_x0, p_y0), (p_x1, p_y0),
+                  (p_x0, p_y1), (p_x1, p_y1)]
 
-    return_tup = (
-        (near_pix[0] + make_white_tup(factors[0])),
-        (near_pix[1] + make_white_tup(factors[1])),
-        (near_pix[2] + make_white_tup(factors[2])),
-        (near_pix[3] + make_white_tup(factors[3]))
-    )
+    fac_kernel = [to_byte(f(r_x0 * r_y0)), to_byte(f(r_x1 * r_y0)),
+                  to_byte(f(r_x0 * r_y1)), to_byte(f(r_x1 * r_y1))]
 
-    return return_tup
+
+
+    # def make_white_tup(factor: float) -> tuple:
+    #     ret_part = 255 * facfun(factor)
+    #     ret = (int(ret_part), int(ret_part), int(ret_part))
+    #     return ret
+
+    return tuple(zip(pix_kernel, fac_kernel))
 
 
 def aa_set_pix(ahat, pix):
     split = split_br(pix)
     for pixel in split:
-        if all(7 >= x >= 0 for x in (pixel[0], pixel[1])):
+        if all(7 >= c >= 0 for c in pixel):
             ahat.set_pixel(*pixel)
+
+
+def aa_set_pixels(ahat, pixels):
+    for pixel in pixels:
+        aa_set_pix(ahat, pixel)
 
 
 if __name__ == "__main__":
     hat = SenseHat()
-    sleeper = DeltaTimer(target_time=0.001)
+    sleeper = DeltaTimer(target_time=0.003)
 
     while True:
         hat.clear()
-        steps = 1500
+        steps = 750
         for i in range(0, steps):
             funity = i / steps
             apix = (usin(funity) * 7, ucos(funity) * 7)
