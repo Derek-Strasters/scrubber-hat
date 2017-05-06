@@ -1,79 +1,14 @@
-from math import floor
+import itertools
+import threading
 from math import pi
 from math import sin
 from math import cos
 from math import sqrt
 from time import sleep
 from time import monotonic
+from abc import ABCMeta, abstractmethod
 
 from sense_hat import SenseHat
-
-
-class DeltaTimer:
-    def __init__(self, **kwargs):
-        self.prev_time = 0
-        self.pres_time = 0
-        target = kwargs.get("target_time", float(1))
-        if isinstance(target, float) and target > 0:
-            self.target = target
-        else:
-            raise ValueError("Parameter 'target_time' must be a positive float")
-
-    def set_target_time(self, target_time):
-        self.target = target_time
-
-    def start(self):
-        self.prev_time = monotonic()
-
-    def restart(self):
-        self.start()
-
-    def delta(self):
-        """Returns the time since delta was last checked or timer was restarted"""
-        pres_time = monotonic()
-        ret = pres_time - self.prev_time
-        self.prev_time = pres_time
-        return ret
-
-    def deltarget(self, **kwargs):
-        positive_only = kwargs.get("positive_only", False)
-        positive_only = kwargs.get("p", positive_only)
-        time_to_targ = self.target - self.delta()
-        return time_to_targ if not positive_only else time_to_targ if time_to_targ > 0 else 0
-
-    def target_sleep(self):
-        sleep(self.deltarget(p=1))
-
-
-def hemisphere_force(s_to_cen):
-    return s_to_cen
-
-class Bowl:
-    def __init__(self, x1, y1, x2, y2, gravity=9.80665, force_map = hemisphere_force):
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x2
-        self.y2 = y2
-        self.gravity = gravity
-
-        self.x_r = (x2 - x1) / 2
-        self.y_r = (y2 - y1) / 2
-        self.cen = (self.x_r + x1, self.y_r + y1)
-
-        self.forcer = force_map
-
-    def get_force(self, point):
-        d_cen = tuple(point[dim] - self.cen[dim] for dim in range(2))
-
-        xforce = g * sin + F * cos - TODO
-
-        return tuple()
-
-def get_accelerometer_mpss(ahat):
-    """Test"""
-    accel_in_g = ahat.get_accelerometer_raw()
-    return {'x': accel_in_g.get('x', 0) * 9.8066, 'y': accel_in_g.get('y', 0) * 9.8066,
-            'z': accel_in_g.get('z', 0) * 9.8066}
 
 
 def usin(partial_unit):
@@ -88,50 +23,199 @@ def ucos(partial_unit):
     return 0.5 + cos(2 * pi * partial_unit) / 2
 
 
-def to_byte(percent):
+def to_byte_int(percent):
     return int(255 * percent)
 
 
-def split_br(pix):
-    p_x0 = int(pix[0])
-    p_y0 = int(pix[1])
-    p_x1 = p_x0 + 1
-    p_y1 = p_y0 + 1
+class DeltaTimer:
+    def __init__(self, target_time=1.0):
+        self.prev_time = 0
+        self.pres_time = 0
+        self.target_time = target_time
 
-    r_x1 = pix[0] - p_x0
-    r_y1 = pix[1] - p_y0
-    r_x0 = 1 - r_x1
-    r_y0 = 1 - r_y1
+    def start(self):
+        self.prev_time = monotonic()
 
-    def f(inp):
-        return sqrt(inp)
+    def restart(self):
+        self.start()
 
-    pix_kernel = [(p_x0, p_y0), (p_x1, p_y0),
-                  (p_x0, p_y1), (p_x1, p_y1)]
+    def delta(self):
+        """Returns the time since delta was last checked or timer was restarted"""
+        pres_time = monotonic()
+        ret = pres_time - self.prev_time
+        self.prev_time = pres_time
+        return ret
 
-    fac_kernel = [to_byte(f(r_x0 * r_y0)), to_byte(f(r_x1 * r_y0)),
-                  to_byte(f(r_x0 * r_y1)), to_byte(f(r_x1 * r_y1))]
+    def deltarget(self, positive_only=False):
+        time_to_targ = self.target_time - self.delta()
+        return time_to_targ if not positive_only else time_to_targ if time_to_targ > 0 else 0
 
-
-
-    # def make_white_tup(factor: float) -> tuple:
-    #     ret_part = 255 * facfun(factor)
-    #     ret = (int(ret_part), int(ret_part), int(ret_part))
-    #     return ret
-
-    return tuple(zip(pix_kernel, fac_kernel))
+    def sleep_target(self):
+        sleep(self.deltarget(positive_only=True))
 
 
-def aa_set_pix(ahat, pix):
-    split = split_br(pix)
-    for pixel in split:
-        if all(7 >= c >= 0 for c in pixel):
-            ahat.set_pixel(*pixel)
+class PhysObject(metaclass=ABCMeta):
+    def __init__(self, x=0, y=0):
+        self.pos = [x, y]
+        self.x = self.pos[0]
+        self.y = self.pos[1]
+        self.vel = [0, 0]
+        self.xv = self.vel[0]
+        self.yv = self.vel[1]
+
+    @abstractmethod
+    def update(self, acc: tuple, dt):
+        pass
 
 
-def aa_set_pixels(ahat, pixels):
-    for pixel in pixels:
-        aa_set_pix(ahat, pixel)
+class PixelPrintable(metaclass=ABCMeta):
+    @abstractmethod
+    def print_pixels(self) -> tuple:
+        pass
+
+
+class Bowl(PhysObject):
+    def __init__(self, xmin, ymin, xmax, ymax, gravity=9.80665, a_hat=SenseHat()):
+        super().__init__()
+        self.xtents = xmax, ymax, xmin, ymin
+        self.gravity = gravity
+        self.hat = a_hat
+        self.acc = {'x': 0, 'y': 0, 'z': 0}
+
+        self.phys_objects = []
+
+        self.cen = ((xmax + xmin) / 2, (ymax + ymin) / 2)
+        self.radii = xmax - self.cen[0], ymax - self.cen[1]
+
+    def accelerate(self, po: PhysObject) -> tuple:
+        a = (self.cartesian_calc_f(self.acc.get('x'), self.radii[0], po.xv, po.x),
+             self.cartesian_calc_f(self.acc.get('y'), self.radii[1], po.yv, po.y))
+        return a
+
+    def update_accelerometer(self):
+        a = self.hat.get_accelerometer_raw()
+        g = self.gravity
+        self.acc = {'x': a.get('x', 0) * g,
+                    'y': a.get('y', 0) * g,
+                    'z': a.get('z', 0) * g}
+
+    def cartesian_calc_f(self, a, r, v, x):
+        rr = r * r
+        xx = x * x
+        z = sqrt(rr - xx)
+        return v * (z + x) / rr - z * x / rr * self.effective_g() + z / r * a
+
+    def effective_g(self):
+        return self.acc.get('z')
+
+    def add_phys_obj(self, phys_obj: PhysObject):
+        self.phys_objects.append(phys_obj)
+
+    def update(self, acc: tuple, dt):
+        self.update_accelerometer()
+        for obj in self.phys_objects:
+            obj.update(self.accelerate(obj)[0], self.accelerate(obj)[1], dt)
+
+
+class Point(PixelPrintable, PhysObject):
+    def __init__(self, x=0, y=0):
+        super().__init__(x=x, y=y)
+
+    def print_pixels(self):
+        def f(x): sqrt(x)
+
+        return aa_kernel(self.pos, f)
+
+    def update(self, acc, dt):
+        self.pos += self.vel * dt
+        self.vel += acc * dt
+
+
+class Pixel:
+    def __init__(self, i, j, val):
+        self.i = i
+        self.j = j
+        self.val = int(255 * val)
+
+    def add(self, pixel):
+        self.val = 255 if self.val + pixel.val > 255 else self.val + pixel.val
+
+    def reset(self):
+        self.val = 0
+
+
+class PixMatrix:
+    def __init__(self, cols, rows):
+        self.pixel_matrix = [[Pixel(col, row, 0) for col in cols] for row in rows]
+
+    def reset(self):
+        for pix in self.single_list():
+            pix.resest()
+
+    def set_pixels(self, pixels):
+        for pixel in pixels:
+            self.pixel_matrix[pixel.i][pixel.j].add(pixel)
+            if self.pixel_matrix[pixel.i][pixel.j].val > 255: self.pixel_matrix[pixel.i][pixel.j].val = 255
+
+    def single_list(self):
+        return itertools.chain.from_iterable(self.pixel_matrix)
+
+
+class PixelPrinter(threading.Thread):
+    def __init__(self, printable_items, delta_t=0.033):
+        super().__init__()
+        if all(isinstance(item, PixelPrintable) for item in printable_items):
+            self.printable_items = printable_items
+        else:
+            raise TypeError("All items must be PixelPrintable")
+        self.pix_matrix = PixMatrix(7, 7)  # TODO: put these globals somewhere better
+        self.delta_timer = DeltaTimer(delta_t)
+        self.hat = SenseHat()
+        self.running = True
+
+    def run(self):
+        timer = self.delta_timer
+        timer.start()
+        while self.running:
+            for item in self.printable_items:
+                self.pix_matrix.set_pixels(item.print_pixels())
+                self.hat.set_pixels()  # TODO: put stuff here
+                self.pix_matrix.reset()
+                timer.sleep_target()
+
+
+def aa_kernel(pos, modifier_func):
+    p_00 = int(pos[0]), int(pos[1])
+    p_01 = p_00[0] + 1, p_00[1]
+    p_10 = p_00[0], p_00[1] + 1
+    p_11 = p_01[0], p_10[1]
+
+    ry_1 = pos[1] - p_00[1]
+    ry_0 = 1 - ry_1
+
+    rx_1 = pos[0] - p_00[0]
+    rx_0 = 1 - rx_1
+
+    kernel_coord = (p_00, p_01,
+                    p_10, p_11)
+
+    pix_fraction = (rx_0 * ry_0, rx_1 * ry_0,
+                    rx_0 * ry_1, rx_1 * ry_1)
+
+    ret_pixels = map(lambda coord, val: Pixel(coord[0], coord[1], modifier_func(val)), kernel_coord, pix_fraction)
+    return ret_pixels
+
+
+# def aa_set_pix(ahat, pix):
+#     split = aa_kernel(pix)
+#     for pixel in split:
+#         if all(7 >= c >= 0 for c in pixel):
+#             ahat.set_pixel(*pixel)
+#
+#
+# def aa_set_pixels(ahat, pixels):
+#     for pixel in pixels:
+#         aa_set_pix(ahat, pixel)
 
 
 if __name__ == "__main__":
@@ -145,4 +229,4 @@ if __name__ == "__main__":
             funity = i / steps
             apix = (usin(funity) * 7, ucos(funity) * 7)
             aa_set_pix(hat, apix)
-            sleeper.target_sleep()
+            sleeper.sleep_target()
